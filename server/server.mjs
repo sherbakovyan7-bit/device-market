@@ -28,7 +28,7 @@ export function createApp() {
       if(req.headers.origin && !allowedOrigins.has(req.headers.origin)) return reply(res,403,{error:'Недопустимый источник'});
       const path=new URL(req.url,'http://localhost').pathname;
       if(req.method==='GET' && path==='/') {
-        res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; connect-src 'self'"});
+        res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'; connect-src 'self'"});
         return res.end(await readFile(new URL('./market.html',import.meta.url)));
       }
       if(path==='/api/health' && req.method==='GET') return reply(res,200,{ok:true,screenSharing:true,remoteControl:false});

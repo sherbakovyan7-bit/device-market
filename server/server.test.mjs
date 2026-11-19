@@ -7,6 +7,10 @@ test('owner authorizes, single-use code, isolation, stop and fresh code',async()
  const base=`http://127.0.0.1:${server.address().port}/api/`;
  const call=async(path,body,token,method='POST')=>{const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(method==='POST'?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()}};
  try{
+  const page=await fetch(base.replace('/api/','/'));
+  assert.equal(page.status,200);
+  assert.match(page.headers.get('content-security-policy'),/img-src 'self' blob:/);
+  assert.match(page.headers.get('content-security-policy'),/media-src 'self' blob:/);
   assert.equal((await call('devices',{name:'test',minutes:0})).status,400);
   const {body:d}=await call('devices',{name:'test',minutes:1});
   const catalog=await call('catalog',null,null,'GET');assert.equal(catalog.body.devices[0].id,d.id);assert.equal(catalog.body.devices[0].secret,undefined);
