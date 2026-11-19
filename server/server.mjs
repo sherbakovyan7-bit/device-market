@@ -24,14 +24,33 @@ export function createApp() {
   const server=http.createServer(async(req,res)=>{
     try {
       // Same-origin browser API; no cross-origin credentials or CORS access.
-      if(req.headers.origin && req.headers.origin!==`http://${req.headers.host}`) return reply(res,403,{error:'Недопустимый источник'});
+      if(req.headers.origin && req.headers.origin!==(process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)) return reply(res,403,{error:'Недопустимый источник'});
       const path=new URL(req.url,'http://localhost').pathname;
       if(req.method==='GET' && path==='/') {
         res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; connect-src 'self'"});
-        return res.end(await readFile(new URL('./index.html',import.meta.url)));
+        return res.end(await readFile(new URL('./market.html',import.meta.url)));
       }
       if(path==='/api/health' && req.method==='GET') return reply(res,200,{ok:true,screenSharing:true,remoteControl:false});
       sweep();
+      if(path==='/api/catalog'&&req.method==='GET')return reply(res,200,{devices:[...devices.values()].map(d=>({id:d.id,name:d.name,minutes:d.minutes,busy:[...sessions.values()].some(s=>s.device===d.id&&s.status!=='ended')}))});
+      const frameMatch=path.match(/^\/api\/sessions\/([^/]+)\/frame$/);
+      if(frameMatch){
+        const s=sessions.get(frameMatch[1]),d=s&&devices.get(s.device),auth=(req.headers.authorization||'').replace(/^Bearer /,'');
+        if(!s||!d||![d.secret,s.guest].includes(auth))return reply(res,403,{error:'Нет доступа'});
+        if(s.status!=='active')return reply(res,409,{error:'Сеанс завершён'});
+        if(req.method==='POST'){
+          if(auth!==d.secret)return reply(res,403,{error:'Только владелец'});
+          if(req.headers['content-type']!=='image/jpeg')return reply(res,415,{error:'Нужен JPEG'});
+          let size=0;const chunks=[];for await(const c of req){size+=c.length;if(size>400000)return reply(res,413,{error:'Слишком большой кадр'});chunks.push(c)}
+          const frame=Buffer.concat(chunks);if(frame[0]!==255||frame[1]!==216)return reply(res,400,{error:'Некорректный JPEG'});
+          if(s.status!=='active')return reply(res,409,{error:'Сеанс завершён'});
+          s.frame=frame;s.frameTime=Date.now();d.seen=Date.now();return reply(res,200,{ok:true});
+        }
+        if(req.method==='GET'){
+          if(!s.frame||Date.now()-s.frameTime>5000){res.writeHead(204,{'Cache-Control':'no-store'});return res.end()}
+          res.writeHead(200,{'Content-Type':'image/jpeg','Cache-Control':'no-store'});return res.end(s.frame);
+        }
+      }
       let body={};
       if(req.method==='POST') {
         if(!req.headers['content-type']?.startsWith('application/json')) return reply(res,415,{error:'Нужен JSON'});
@@ -49,7 +68,7 @@ export function createApp() {
       if(path==='/api/connect' && req.method==='POST') {
         const ip=req.socket.remoteAddress;const a=attempts.get(ip)||{count:0,until:Date.now()+60000};attempts.set(ip,a);
         if(++a.count>10) return reply(res,429,{error:'Слишком много попыток. Подождите минуту.'});
-        const d=[...devices.values()].find(d=>d.code && d.code===String(body.code).trim().toUpperCase() && d.codeUntil>Date.now());
+        const d=body.deviceId?devices.get(String(body.deviceId)):[...devices.values()].find(d=>d.code && d.code===String(body.code).trim().toUpperCase() && d.codeUntil>Date.now());
         if(!d) return reply(res,404,{error:'Код неверный или истёк'});
         if([...sessions.values()].some(s=>s.device===d.id && ['active','pending'].includes(s.status))) return reply(res,409,{error:'Устройство занято'});
         d.code=null;
@@ -86,7 +105,7 @@ export function createApp() {
           s.status='active';s.expiresAt=Date.now()+d.minutes*60000;d.seen=Date.now();return reply(res,200,view(s));
         }
         if(req.method==='POST'&&match[2]==='stop'){
-          s.status='ended';s.reason=owner?'Отключён владельцем':'Гость завершил сеанс';s.expiresAt=Date.now();return reply(res,200,view(s));
+          s.status='ended';delete s.frame;s.reason=owner?'Отключён владельцем':'Гость завершил сеанс';s.expiresAt=Date.now();return reply(res,200,view(s));
         }
       }
       reply(res,404,{error:'Маршрут не найден'});
