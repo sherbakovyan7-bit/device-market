@@ -24,7 +24,8 @@ export function createApp() {
   const server=http.createServer(async(req,res)=>{
     try {
       // Same-origin browser API; no cross-origin credentials or CORS access.
-      if(req.headers.origin && req.headers.origin!==(process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)) return reply(res,403,{error:'Недопустимый источник'});
+      const allowedOrigins=new Set([`http://${req.headers.host}`,process.env.PUBLIC_ORIGIN].filter(Boolean));
+      if(req.headers.origin && !allowedOrigins.has(req.headers.origin)) return reply(res,403,{error:'Недопустимый источник'});
       const path=new URL(req.url,'http://localhost').pathname;
       if(req.method==='GET' && path==='/') {
         res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; connect-src 'self'"});
