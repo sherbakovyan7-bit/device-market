@@ -64,7 +64,7 @@ export function createApp() {
         if(devices.size>=100) return reply(res,429,{error:'Лимит локального сервера'});
         if(typeof body.name!=='string'||!body.name.trim()||body.name.length>80||!Number.isInteger(body.minutes)||body.minutes<1||body.minutes>1440) return reply(res,400,{error:'Укажите название и время от 1 до 1440 минут'});
         const d={id:randomUUID(),name:body.name.trim(),minutes:body.minutes,secret:token(),code:randomBytes(6).toString('hex').toUpperCase(),codeUntil:Date.now()+600000,seen:Date.now()};
-        devices.set(d.id,d);return reply(res,201,{id:d.id,ownerToken:d.secret,code:d.code,codeExpiresAt:d.codeUntil});
+        d.autoAccept=body.autoAccept===true;devices.set(d.id,d);return reply(res,201,{id:d.id,ownerToken:d.secret,code:d.code,codeExpiresAt:d.codeUntil});
       }
       if(path==='/api/connect' && req.method==='POST') {
         const ip=req.socket.remoteAddress;const a=attempts.get(ip)||{count:0,until:Date.now()+60000};attempts.set(ip,a);
@@ -74,11 +74,12 @@ export function createApp() {
         if([...sessions.values()].some(s=>s.device===d.id && ['active','pending'].includes(s.status))) return reply(res,409,{error:'Устройство занято'});
         d.code=null;
         const s={id:randomUUID(),device:d.id,guest:token(),status:'pending',expiresAt:Date.now()+60000,reason:null};sessions.set(s.id,s);
-        return reply(res,201,{...view(s),guestToken:s.guest});
+        if(d.autoAccept){s.status='active';s.expiresAt=Date.now()+d.minutes*60000;}return reply(res,201,{...view(s),guestToken:s.guest});
       }
       const deviceMatch=path.match(/^\/api\/devices\/([^/]+)(?:\/(code))?$/);
       if(deviceMatch){
         const d=devices.get(deviceMatch[1]);if(!d||d.secret!==auth)return reply(res,403,{error:'Нет доступа владельца'});
+        if(req.method==='DELETE'&&!deviceMatch[2]){devices.delete(d.id);for(const s of sessions.values())if(s.device===d.id&&s.status!=='ended'){s.status='ended';s.reason='Владелец остановил показ';s.expiresAt=Date.now();delete s.frame;}return reply(res,200,{ok:true});}
         if(req.method==='GET'&&!deviceMatch[2]){d.seen=Date.now();return reply(res,200,{id:d.id,name:d.name,sessions:[...sessions.values()].filter(s=>s.device===d.id).map(view)});}
         if(req.method==='POST'&&deviceMatch[2]==='code'){
           if([...sessions.values()].some(s=>s.device===d.id && ['active','pending'].includes(s.status)))return reply(res,409,{error:'Сначала завершите текущий запрос или сеанс'});

@@ -39,5 +39,10 @@ test('owner authorizes, single-use code, isolation, stop and fresh code',async()
   assert.equal((await fetch(frameUrl,{headers:{Authorization:'Bearer '+s.guestToken}})).status,409);
   assert.equal((await call(`sessions/${s.id}/signal`,null,s.guestToken,'GET')).status,409);
   assert.equal((await call(`devices/${d.id}/code`,{},d.ownerToken)).status,200);
+  const auto=(await call('devices',{name:'Auto screen',minutes:5,autoAccept:true})).body;
+  const immediate=await call('connect',{deviceId:auto.id});assert.equal(immediate.body.status,'active');
+  assert.equal((await fetch(base+'devices/'+auto.id,{method:'DELETE',headers:{Authorization:'Bearer '+immediate.body.guestToken}})).status,403);
+  assert.equal((await fetch(base+'devices/'+auto.id,{method:'DELETE',headers:{Authorization:'Bearer '+auto.ownerToken}})).status,200);
+  assert.equal((await call('sessions/'+immediate.body.id,null,immediate.body.guestToken,'GET')).body.status,'ended');
  }finally{await new Promise(r=>server.close(r))}
 });
